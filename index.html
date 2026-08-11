@@ -297,6 +297,7 @@ const MIC_IMAGE_FILES = {
   '新奥4': '新奥4.jpg',
   '湖山1': '湖山1.jpg',
   '湖山2': '湖山2.jpg',
+  '东微1': '东微1.jpg',
 };
 const MIC_ALIASES = {
   '新奥测试1': '新奥1',
@@ -315,6 +316,11 @@ const MANUAL_READ_SCORES = {
   '新奥1': { front: 98.5, side: 98.9, avg: 98.7 },
   '新奥3': { front: 99, side: 99, avg: 99 },
   '新奥4': { front: 98.6, side: 98.6, avg: 98.6 },
+  '东微1': { avg: 98.72, tip: '30cm 人工读稿子识别率 98.72%' },
+};
+/** 来源：result_and_standard/标准.txt 与 result_and_standard/东微-1.txt */
+const EXTRA_COMPOSITE_SCORES = {
+  '东微1': { xinwen: 99.29, tingshen: 94.61, xinwen2min: 99.18 },
 };
 function canonMic(m){ return MIC_ALIASES[m] || m; }
 function micImageSrc(mic){
@@ -505,6 +511,11 @@ function buildCompositeData(){
   Object.entries(MANUAL_READ_SCORES).forEach(([mic, row])=>{
     scores.manual[mic]=row.avg;
   });
+  Object.entries(EXTRA_COMPOSITE_SCORES).forEach(([mic, row])=>{
+    Object.entries(row).forEach(([project, score])=>{
+      scores[project][mic]=score;
+    });
+  });
   return {scores,display};
 }
 
@@ -546,7 +557,7 @@ function weightedComposite(parts){
 function manualScoreCell(mic){
   const row=MANUAL_READ_SCORES[mic];
   if(!row) return '<td>—</td>';
-  const tip=`正对20cm ${row.front}% · 斜侧面20cm ${row.side}%`;
+  const tip=row.tip||`正对20cm ${row.front}% · 斜侧面20cm ${row.side}%`;
   return `<td class="${rateClass(row.avg)}" title="${tip}">${row.avg.toFixed(2)}%</td>`;
 }
 
@@ -621,7 +632,11 @@ function renderCompositeRank(){
       (row.x!=null?`<td class="${rateClass(row.x)}">${row.x.toFixed(2)}%</td>`:'<td>—</td>')+
       (row.t!=null?`<td class="${rateClass(row.t)}">${row.t.toFixed(2)}%</td>`:'<td>—</td>')+
       manualScoreCell(row.mic)+
-      (row.x2!=null?`<td class="${rateClass(row.x2)}"><button type="button" class="score-detail-btn" title="查看${row.mic}与标准文本的多字、少字、错字位置">${row.x2.toFixed(2)}%</button></td>`:'<td>—</td>')+
+      (row.x2!=null
+        ? (display.xinwen2min[row.mic]
+          ? `<td class="${rateClass(row.x2)}"><button type="button" class="score-detail-btn" title="查看${row.mic}与标准文本的多字、少字、错字位置">${row.x2.toFixed(2)}%</button></td>`
+          : `<td class="${rateClass(row.x2)}">${row.x2.toFixed(2)}%</td>`)
+        : '<td>—</td>')+
       `<td class="composite-score">${row.composite.toFixed(2)}%</td>`;
     tbody.appendChild(tr);
     const detailBtn=tr.querySelector('.score-detail-btn');
