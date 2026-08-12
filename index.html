@@ -152,7 +152,7 @@ body.mic-lightbox-open{overflow:hidden}
   <div class="nav-section">
     <div class="nav-label">导航</div>
     <button class="nav-item active" data-page="overview">📊 项目概览</button>
-    <button class="nav-item" data-page="cross" id="navCross">🔄 跨项目对比</button>
+    <button class="nav-item" data-page="composite">📋 综合得分排名</button>
   </div>
   <div class="nav-section" id="projectNav"></div>
 </aside>
@@ -165,17 +165,10 @@ body.mic-lightbox-open{overflow:hidden}
     <div class="page active" id="page-overview">
       <div class="cards" id="overviewCards"></div>
       <div class="table-wrap">
-        <h3>全部项目排名汇总</h3>
-        <table><thead><tr><th>项目</th><th>最佳麦克风</th><th>最高识别率</th><th>最差麦克风</th><th>最低识别率</th><th>麦克风数</th><th>测试次数</th></tr></thead>
+        <h3>综合得分排名概览（前 5 名）</h3>
+        <table><thead><tr><th>排名</th><th>麦克风</th><th>综合得分</th><th>参与计分场景</th></tr></thead>
         <tbody id="overviewTable"></tbody></table>
       </div>
-    </div>
-    <div class="page" id="page-cross">
-      <div class="table-wrap">
-        <h3>跨项目麦克风对比（同名麦克风在不同场景下的表现）</h3>
-        <table><thead id="crossHead"></thead><tbody id="crossBody"></tbody></table>
-      </div>
-      <p class="empty" id="crossEmpty" style="display:none">暂无跨项目可对比的同名麦克风</p>
     </div>
     <div class="page" id="page-composite">
       <p class="composite-note">新闻、庭审及<strong>新闻2分钟</strong>均为各项目全部测试轮次的平均识别率；<strong>人工读稿子</strong>为 20cm 正对与斜侧面两次识别率的平均（见 <code>static/excel/人工读稿子.csv</code>）。新闻2分钟得分可点击查看与标准文本的逐字区别，包括<strong>多字、少字、错字</strong>的位置。综合得分按下方权重（1–10）加权平均，缺某项数据时仅对已有项计权。</p>
@@ -389,7 +382,6 @@ function init(){
   $('genTime').textContent = '生成于 ' + (DATA.generated_at||'').replace('T',' ');
   buildProjectNav();
   renderOverview();
-  renderCross();
   bindNav();
   bindMicLightbox();
   bindCompositeWeights();
@@ -411,13 +403,6 @@ function buildProjectNav(){
     btn.textContent='📁 '+p.name;
     btn.addEventListener('click',()=>showProject(p.id));
     nav.appendChild(btn);
-    if(p.id==='tingshen'){
-      const rankBtn=document.createElement('button');
-      rankBtn.className='nav-item nav-item-sub';
-      rankBtn.dataset.page='composite';
-      rankBtn.textContent='📋 综合得分排名';
-      nav.appendChild(rankBtn);
-    }
   });
 }
 
@@ -429,8 +414,7 @@ function bindNav(){
       btn.classList.add('active');
       document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
       const page=btn.dataset.page;
-      if(page==='overview'){$('page-overview').classList.add('active');$('pageTitle').textContent='项目概览';$('pageMeta').textContent=''}
-      if(page==='cross'){$('page-cross').classList.add('active');$('pageTitle').textContent='跨项目对比';$('pageMeta').textContent=''}
+      if(page==='overview'){$('page-overview').classList.add('active');$('pageTitle').textContent='项目概览';$('pageMeta').textContent='';renderOverview()}
       if(page==='composite'){$('page-composite').classList.add('active');$('pageTitle').textContent='综合得分排名';$('pageMeta').textContent='';renderCompositeRank()}
     });
   });
@@ -445,55 +429,60 @@ function bindNav(){
 }
 
 function renderOverview(){
+  const w=loadCompositeWeights();
+  const {scores,display}=buildCompositeData();
+  const mics=new Set([
+    ...Object.keys(scores.xinwen),
+    ...Object.keys(scores.tingshen),
+    ...Object.keys(scores.manual),
+    ...Object.keys(scores.xinwen2min),
+  ]);
+  const rows=[...mics].map(mic=>{
+    const parts=[
+      {name:'新闻',v:scores.xinwen[mic],w:w.xinwen},
+      {name:'庭审',v:scores.tingshen[mic],w:w.tingshen},
+      {name:'人工读稿',v:scores.manual[mic],w:w.manual},
+      {name:'新闻2分钟',v:scores.xinwen2min[mic],w:w.xinwen2min},
+    ];
+    return {
+      mic,
+      composite:weightedComposite(parts),
+      scenes:parts.filter(p=>p.v!=null).map(p=>p.name),
+    };
+  }).filter(row=>row.composite!=null).sort((a,b)=>
+    b.composite-a.composite || a.mic.localeCompare(b.mic,'zh-CN')
+  );
+
   const cards=$('overviewCards');
-  cards.innerHTML='';
-  DATA.projects.forEach(p=>{
-    const card=document.createElement('div');
-    card.className='card';
-    card.innerHTML=`<h3>${p.name}</h3><p>${p.description||''}</p>
+  const leader=rows[0];
+  cards.innerHTML=`
+    <div class="card">
+      <h3>综合得分第一</h3>
       <div class="card-stats">
-        <div class="card-stat"><div class="val">${p.best_avg}%</div><div class="lbl">最佳 ${p.best_mic}</div></div>
-        <div class="card-stat"><div class="val">${p.mic_count}</div><div class="lbl">麦克风</div></div>
-        <div class="card-stat"><div class="val">${p.test_count}</div><div class="lbl">测试次数</div></div>
-      </div>`;
-    card.addEventListener('click',()=>showProject(p.id));
-    cards.appendChild(card);
-  });
+        <div class="card-stat"><div class="val">${leader?leader.composite.toFixed(2)+'%':'—'}</div><div class="lbl">${leader?leader.mic:'暂无数据'}</div></div>
+      </div>
+    </div>
+    <div class="card">
+      <h3>参与排名</h3>
+      <div class="card-stats">
+        <div class="card-stat"><div class="val">${rows.length}</div><div class="lbl">个麦克风</div></div>
+      </div>
+    </div>
+    <div class="card">
+      <h3>计分场景</h3>
+      <div class="card-stats">
+        <div class="card-stat"><div class="val">4</div><div class="lbl">新闻 · 庭审 · 人工读稿 · 新闻2分钟</div></div>
+      </div>
+    </div>`;
+
   const tbody=$('overviewTable');
   tbody.innerHTML='';
-  DATA.projects.forEach(p=>{
+  rows.slice(0,5).forEach((row,index)=>{
     const tr=document.createElement('tr');
-    tr.className='clickable';
-    tr.innerHTML=`<td><strong>${p.name}</strong></td><td>${p.best_mic}</td>
-      <td class="${rateClass(p.best_avg)}">${p.best_avg}%</td>
-      <td>${p.worst_mic}</td><td class="${rateClass(p.worst_avg)}">${p.worst_avg}%</td>
-      <td>${p.mic_count}</td><td>${p.test_count}</td>`;
-    tr.addEventListener('click',()=>showProject(p.id));
+    tr.innerHTML=`<td>${index+1}</td><td>${micCompositeCell(row.mic,display)}</td>
+      <td class="composite-score">${row.composite.toFixed(2)}%</td>
+      <td>${row.scenes.join('、')}</td>`;
     tbody.appendChild(tr);
-  });
-}
-
-function renderCross(){
-  const cc=DATA.cross_comparison||[];
-  if(!cc.length){$('crossEmpty').style.display='block';return}
-  $('crossEmpty').style.display='none';
-  const pids=DATA.projects.map(p=>p.id);
-  const pnames={};DATA.projects.forEach(p=>pnames[p.id]=p.name);
-  let head='<tr><th>排名</th><th>麦克风</th>';
-  pids.forEach(id=>{head+=`<th>${pnames[id]}</th>`});
-  head+='<th>综合平均</th><th>场景差异</th></tr>';
-  $('crossHead').innerHTML=head;
-  const tbody=$('crossBody');
-  tbody.innerHTML='';
-  cc.forEach((row,i)=>{
-    let html=`<td>${i+1}</td><td>${micNameHtml(row.mic)}</td>`;
-    pids.forEach(id=>{
-      const v=row.projects[id];
-      html+=v!==undefined?`<td class="${rateClass(v)}">${v}%</td>`:'<td>—</td>';
-    });
-    html+=`<td class="${rateClass(row.avg_all)}"><strong>${row.avg_all}%</strong></td>`;
-    html+=`<td>${row.diff}%</td>`;
-    tbody.innerHTML+=`<tr>${html}</tr>`;
   });
 }
 
